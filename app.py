@@ -539,7 +539,7 @@ with tab_results:
         st.caption(f"Showing {len(filtered):,} of {len(df):,} comments")
         st.dataframe(
             filtered[["course_id", "comment", "needs_review", "is_duplicate", "page_number"]],
-            use_container_width=True,
+            width="stretch",
             height=480,
             column_config={
                 "course_id": st.column_config.TextColumn("Course ID", width="small"),
