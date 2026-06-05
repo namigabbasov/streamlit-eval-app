@@ -10,6 +10,7 @@ import fitz
 import pandas as pd
 import streamlit as st
 from openai import OpenAI
+from supabase import create_client, ClientOptions
 
 st.set_page_config(
     page_title="EvalReader · Stanford Law",
@@ -252,14 +253,93 @@ section[data-testid="stSidebar"] label { color: rgba(255,255,255,0.7) !important
 .log-item.error { border-left-color: #cc0000; }
 
 hr { border: none; border-top: 1px solid #e8e0d8; margin: 1.5rem 0; }
+
+/* ── Login card ── */
+.login-card {
+    background: white;
+    border: 1px solid #e8e0d8;
+    border-top: 4px solid #8C1515;
+    border-radius: 6px;
+    padding: 2.5rem 2rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-top: 3rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
+# ── Supabase client ────────────────────────────────────────────────────────────
+@st.cache_resource
+def get_supabase():
+    """Admin client — for DB queries and user management."""
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_SERVICE_KEY"],
+        options=ClientOptions(auto_refresh_token=False, persist_session=False),
+    )
+
+@st.cache_resource
+def get_supabase_auth():
+    """Auth client — for sign_in_with_password."""
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_PUBLISHABLE_KEY"],
+        options=ClientOptions(auto_refresh_token=False, persist_session=False),
+    )
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+def _do_login(email: str, password: str):
+    if not email or not password:
+        st.error("Enter your email and password.")
+        return
+    try:
+        auth_client = get_supabase_auth()
+        resp = auth_client.auth.sign_in_with_password({"email": email, "password": password})
+        sb = get_supabase()
+        role_row = sb.table("user_roles").select("role").eq("email", resp.user.email).single().execute()
+        if not role_row.data:
+            st.error("Access denied. Contact your administrator.")
+            return
+        st.session_state.user = {"email": resp.user.email, "role": role_row.data["role"]}
+        st.rerun()
+    except Exception:
+        st.error("Incorrect email or password.")
+
+def _show_login():
+    st.markdown("""
+    <div class="stanford-header">
+      <div class="stanford-wordmark">Stanford Law School</div>
+      <div class="stanford-subtitle">EvalReader · Course Evaluation Extractor</div>
+    </div>
+    <div class="stanford-divider"></div>
+    """, unsafe_allow_html=True)
+
+    _, col, _ = st.columns([1, 1.1, 1])
+    with col:
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+        st.markdown('<div class="page-title" style="text-align:center;margin-top:0">Sign in</div>', unsafe_allow_html=True)
+        st.markdown('<div class="page-subtitle" style="text-align:center">EvalReader is restricted to authorized users.<br>Contact your administrator to request access.</div>', unsafe_allow_html=True)
+        with st.form("login"):
+            email = st.text_input("Email address")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Sign in", use_container_width=True):
+                _do_login(email, password)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Auth gate ─────────────────────────────────────────────────────────────────
+if "user" not in st.session_state:
+    _show_login()
+    st.stop()
+
+_user = st.session_state.user
+_is_admin = _user["role"] == "admin"
+
+# ── Session state ─────────────────────────────────────────────────────────────
 if "results" not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
 TARGET_QUESTION = "What would you say to a classmate who was planning to take this class?"
 
+# ── PDF helpers ───────────────────────────────────────────────────────────────
 def extract_course_id(pdf_bytes, file_name):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     text = ""
@@ -407,6 +487,12 @@ with st.sidebar:
     st.markdown("**EvalReader**")
     st.caption("Stanford Law School")
     st.caption("GPT-4.1 Vision · PyMuPDF")
+    st.divider()
+    st.markdown(f"**{_user['email']}**")
+    st.caption(f"Role: {_user['role'].capitalize()}")
+    if st.button("Sign out", type="secondary"):
+        del st.session_state["user"]
+        st.rerun()
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -418,9 +504,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_extract, tab_results = st.tabs(["Upload", "Results"])
+if _is_admin:
+    tab_extract, tab_results, tab_admin = st.tabs(["Upload", "Results", "Manage Users"])
+else:
+    tab_extract, tab_results = st.tabs(["Upload", "Results"])
 
-# ─── Extract ──────────────────────────────────────────────────────────────────
+# ── Upload tab ────────────────────────────────────────────────────────────────
 with tab_extract:
     st.markdown('<div class="page-title">Extract Comments</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-subtitle">Upload course evaluation PDFs — GPT-4.1 Vision transcribes every handwritten student comment.</div>', unsafe_allow_html=True)
@@ -478,7 +567,7 @@ with tab_extract:
             else:
                 st.warning("No comments found in uploaded files.")
 
-# ─── Results ──────────────────────────────────────────────────────────────────
+# ── Results tab ───────────────────────────────────────────────────────────────
 with tab_results:
     df = st.session_state.results
 
@@ -561,3 +650,86 @@ with tab_results:
                 st.session_state.results = pd.DataFrame()
                 st.rerun()
 
+# ── Admin tab ─────────────────────────────────────────────────────────────────
+if _is_admin:
+    with tab_admin:
+        st.markdown('<div class="page-title">Manage Users</div>', unsafe_allow_html=True)
+        st.markdown('<div class="page-subtitle">Add or remove people who can access EvalReader.</div>', unsafe_allow_html=True)
+
+        sb = get_supabase()
+
+        # ── Add user ──────────────────────────────────────────────────────────
+        st.markdown('<div class="section-header">Add user</div>', unsafe_allow_html=True)
+        st.markdown("")
+        with st.form("add_user"):
+            c1, c2 = st.columns([3, 1])
+            new_email = c1.text_input("Email address")
+            new_role = c2.selectbox("Role", ["user", "admin"])
+            new_password = st.text_input(
+                "Temporary password",
+                type="password",
+                help="Share this with the user. They should change it after first login.",
+            )
+            if st.form_submit_button("Add user", use_container_width=False):
+                if not new_email or not new_password:
+                    st.error("Email and temporary password are required.")
+                else:
+                    try:
+                        sb.auth.admin.create_user({
+                            "email": new_email,
+                            "password": new_password,
+                            "email_confirm": True,
+                        })
+                        sb.table("user_roles").insert({
+                            "email": new_email,
+                            "role": new_role,
+                            "added_by": _user["email"],
+                        }).execute()
+                        st.success(f"Added {new_email} as {new_role}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Could not add user: {e}")
+
+        # ── User list ─────────────────────────────────────────────────────────
+        st.markdown("")
+        st.markdown('<div class="section-header">Current users</div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        users = (
+            sb.table("user_roles")
+            .select("email, role, created_at, added_by")
+            .order("created_at")
+            .execute()
+            .data
+        ) or []
+
+        if not users:
+            st.caption("No users found.")
+        else:
+            header = st.columns([3, 1, 2, 1])
+            header[0].caption("Email")
+            header[1].caption("Role")
+            header[2].caption("Added by")
+            header[3].caption("")
+            st.markdown("<hr style='margin:0.25rem 0 0.75rem 0'>", unsafe_allow_html=True)
+
+            for u in users:
+                row = st.columns([3, 1, 2, 1])
+                row[0].write(u["email"])
+                row[1].write(u["role"].capitalize())
+                row[2].caption(u.get("added_by") or "—")
+                if u["email"] == _user["email"]:
+                    row[3].caption("(you)")
+                else:
+                    if row[3].button("Remove", key=f"rm_{u['email']}"):
+                        try:
+                            auth_users = sb.auth.admin.list_users()
+                            for au in auth_users:
+                                if au.email == u["email"]:
+                                    sb.auth.admin.delete_user(au.id)
+                                    break
+                            sb.table("user_roles").delete().eq("email", u["email"]).execute()
+                            st.success(f"Removed {u['email']}.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Could not remove user: {e}")
