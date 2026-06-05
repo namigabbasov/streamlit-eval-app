@@ -490,6 +490,32 @@ with st.sidebar:
     st.divider()
     st.markdown(f"**{_user['email']}**")
     st.caption(f"Role: {_user['role'].capitalize()}")
+    with st.expander("Change password"):
+        with st.form("change_password"):
+            current_pw = st.text_input("Current password", type="password")
+            new_pw = st.text_input("New password", type="password")
+            confirm_pw = st.text_input("Confirm new password", type="password")
+            if st.form_submit_button("Update password", use_container_width=True):
+                if not current_pw or not new_pw or not confirm_pw:
+                    st.error("All fields required.")
+                elif new_pw != confirm_pw:
+                    st.error("Passwords don't match.")
+                elif len(new_pw) < 6:
+                    st.error("Minimum 6 characters.")
+                else:
+                    try:
+                        get_supabase_auth().auth.sign_in_with_password(
+                            {"email": _user["email"], "password": current_pw}
+                        )
+                        auth_users = get_supabase().auth.admin.list_users()
+                        user_id = next((u.id for u in auth_users if u.email == _user["email"]), None)
+                        if user_id:
+                            get_supabase().auth.admin.update_user_by_id(user_id, {"password": new_pw})
+                            st.success("Password updated.")
+                        else:
+                            st.error("User not found.")
+                    except Exception:
+                        st.error("Current password is incorrect.")
     if st.button("Sign out", type="secondary"):
         del st.session_state["user"]
         st.rerun()
