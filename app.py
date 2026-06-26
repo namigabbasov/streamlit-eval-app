@@ -254,15 +254,51 @@ section[data-testid="stSidebar"] label { color: rgba(255,255,255,0.7) !important
 
 hr { border: none; border-top: 1px solid #e8e0d8; margin: 1.5rem 0; }
 
-/* ── Login card ── */
-.login-card {
+/* ── Login page ── */
+.login-brand {
     background: white;
-    border: 1px solid #e8e0d8;
-    border-top: 4px solid #8C1515;
-    border-radius: 6px;
-    padding: 2.5rem 2rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    margin-top: 3rem;
+    border: 1px solid #ddd5cc;
+    border-top: 5px solid #8C1515;
+    border-radius: 8px 8px 0 0;
+    padding: 2.75rem 2.5rem 2rem 2.5rem;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+.login-brand-eyebrow {
+    font-family: 'Source Serif 4', serif;
+    font-size: 0.82rem;
+    color: #8C1515;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+}
+.login-brand-school {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.9rem;
+    color: #1a1a1a;
+    font-weight: 400;
+    line-height: 1.2;
+}
+.login-brand-rule {
+    width: 40px;
+    height: 2px;
+    background: #8C1515;
+    margin: 1rem auto 1rem auto;
+    border-radius: 1px;
+}
+.login-brand-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 2rem;
+    font-weight: 400;
+    color: #1a1a1a;
+}
+.login-footer {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #aaa;
+    margin-top: 1.25rem;
+    letter-spacing: 0.01em;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -304,30 +340,126 @@ def _do_login(email: str, password: str):
     except Exception:
         st.error("Incorrect email or password.")
 
-def _show_login():
+def _login_page_style():
     st.markdown("""
-    <div class="stanford-header">
-      <div class="stanford-wordmark">Stanford Law School</div>
-      <div class="stanford-subtitle">EvalReader · Course Evaluation Extractor</div>
-    </div>
-    <div class="stanford-divider"></div>
+    <style>
+    .stApp { background: #e8e2d9 !important; }
+    section[data-testid="stSidebar"] { display: none; }
+    [data-testid="stForm"] {
+        background: white !important;
+        border: 1px solid #d8d0c8 !important;
+        border-top: 4px solid #8C1515 !important;
+        border-radius: 8px !important;
+        padding: 2rem 2.25rem !important;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.09) !important;
+    }
+    </style>
     """, unsafe_allow_html=True)
 
-    _, col, _ = st.columns([1, 1.1, 1])
+def _login_brand(title):
+    st.markdown(f"""
+    <div style="text-align:center; margin: 3rem 0 1.5rem 0;">
+        <div style="font-family:'Source Serif 4',serif; font-size:0.78rem; color:#8C1515;
+                    letter-spacing:0.22em; text-transform:uppercase; font-weight:600;
+                    margin-bottom:0.3rem;">Stanford Law School</div>
+        <div style="font-family:'Source Serif 4',serif; font-size:2.2rem; color:#1a1a1a;
+                    font-weight:400; line-height:1.1; margin-bottom:0.3rem;">EvalReader</div>
+        <div style="font-size:0.95rem; color:#777; font-weight:300; letter-spacing:0.03em;
+                    margin-bottom:0.1rem;">Course Evaluation Digital Extraction</div>
+        <div style="width:40px; height:2px; background:#8C1515;
+                    margin:1rem auto 1rem auto; border-radius:1px;"></div>
+        <div style="font-family:'Source Serif 4',serif; font-size:1.6rem;
+                    font-weight:400; color:#1a1a1a;">{title}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def _show_login():
+    _login_page_style()
+    _, col, _ = st.columns([1, 2, 1])
     with col:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        st.markdown('<div class="page-title" style="text-align:center;margin-top:0">Sign in</div>', unsafe_allow_html=True)
-        st.markdown('<div class="page-subtitle" style="text-align:center">EvalReader is restricted to authorized users.<br>Contact your administrator to request access.</div>', unsafe_allow_html=True)
+        _login_brand("Sign in")
         with st.form("login"):
             email = st.text_input("Email address")
             password = st.text_input("Password", type="password")
             if st.form_submit_button("Sign in", use_container_width=True):
                 _do_login(email, password)
-        st.markdown('</div>', unsafe_allow_html=True)
+            if st.form_submit_button("Forgot password?", type="secondary", use_container_width=True):
+                st.session_state["show_forgot_password"] = True
+                st.rerun()
+        st.markdown('<div class="login-footer">Restricted to authorized users · Stanford Law School</div>', unsafe_allow_html=True)
+
+def _show_forgot_password():
+    _login_page_style()
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        _login_brand("Reset password")
+        with st.form("forgot_password"):
+            email = st.text_input("Email address")
+            st.caption("Enter your email and we'll send you a reset link.")
+            if st.form_submit_button("Send reset link", use_container_width=True):
+                if not email:
+                    st.error("Enter your email address.")
+                else:
+                    try:
+                        app_url = st.secrets.get("APP_URL", "http://localhost:8502")
+                        get_supabase_auth().auth.reset_password_for_email(
+                            email, {"redirect_to": app_url}
+                        )
+                        st.success("If that email is registered, a reset link has been sent. Check your inbox.")
+                    except Exception:
+                        st.error("Something went wrong. Try again.")
+            if st.form_submit_button("Back to sign in", type="secondary", use_container_width=True):
+                del st.session_state["show_forgot_password"]
+                st.rerun()
+        st.markdown('<div class="login-footer">Restricted to authorized users · Stanford Law School</div>', unsafe_allow_html=True)
+
+def _show_reset_password():
+    code = st.query_params.get("code")
+    _login_page_style()
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        _login_brand("Set new password")
+        with st.form("reset_password"):
+            new_pw = st.text_input("New password", type="password")
+            confirm_pw = st.text_input("Confirm new password", type="password")
+            if st.form_submit_button("Set password", use_container_width=True):
+                if not new_pw or not confirm_pw:
+                    st.error("Both fields are required.")
+                elif new_pw != confirm_pw:
+                    st.error("Passwords don't match.")
+                elif len(new_pw) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    try:
+                        fresh_client = create_client(
+                            st.secrets["SUPABASE_URL"],
+                            st.secrets["SUPABASE_PUBLISHABLE_KEY"],
+                            options=ClientOptions(auto_refresh_token=False, persist_session=False),
+                        )
+                        session_resp = fresh_client.auth.exchange_code_for_session({"auth_code": code})
+                        user_email = session_resp.user.email
+                        auth_users = get_supabase().auth.admin.list_users()
+                        user_id = next((u.id for u in auth_users if u.email == user_email), None)
+                        if user_id:
+                            get_supabase().auth.admin.update_user_by_id(user_id, {"password": new_pw})
+                            st.query_params.clear()
+                            st.success("Password updated! You can now sign in.")
+                        else:
+                            st.error("User not found.")
+                    except Exception:
+                        st.error("Reset link expired or already used. Request a new one.")
+        st.markdown('<div class="login-footer">Restricted to authorized users · Stanford Law School</div>', unsafe_allow_html=True)
 
 # ── Auth gate ─────────────────────────────────────────────────────────────────
+if "code" in st.query_params:
+    _show_reset_password()
+    st.stop()
+
 if "user" not in st.session_state:
-    _show_login()
+    if st.session_state.get("show_forgot_password"):
+        _show_forgot_password()
+    else:
+        _show_login()
     st.stop()
 
 _user = st.session_state.user
