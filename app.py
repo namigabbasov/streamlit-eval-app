@@ -620,11 +620,9 @@ def process_pdf(pdf_bytes, file_name, client, target_question):
 with st.sidebar:
     st.markdown("## ⚙ Settings")
     try:
-        default_key = st.secrets.get("OPENAI_API_KEY", "")
+        api_key = st.secrets.get("OPENAI_API_KEY", "")
     except Exception:
-        default_key = ""
-    api_key = st.text_input("OpenAI API key", value=default_key, type="password", placeholder="sk-proj-…")
-    st.divider()
+        api_key = ""
     target_question = st.text_area("Target question", value=TARGET_QUESTION, height=120)
     st.divider()
     st.markdown("**EvalReader**")
@@ -702,7 +700,7 @@ with tab_extract:
         with col1:
             run = st.button("▶  Run Extraction", type="primary", disabled=not api_key)
         if not api_key:
-            st.warning("⚠ Enter your OpenAI API key in the sidebar.")
+            st.warning("⚠ OPENAI_API_KEY is not configured. Contact your administrator.")
 
         if run and api_key:
             client = OpenAI(api_key=api_key)
