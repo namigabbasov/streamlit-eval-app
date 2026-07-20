@@ -431,12 +431,7 @@ def _show_reset_password():
                     st.error("Password must be at least 6 characters.")
                 else:
                     try:
-                        fresh_client = create_client(
-                            st.secrets["SUPABASE_URL"],
-                            st.secrets["SUPABASE_PUBLISHABLE_KEY"],
-                            options=ClientOptions(auto_refresh_token=False, persist_session=False),
-                        )
-                        session_resp = fresh_client.auth.exchange_code_for_session({"auth_code": code})
+                        session_resp = get_supabase_auth().auth.exchange_code_for_session({"auth_code": code})
                         user_email = session_resp.user.email
                         auth_users = get_supabase().auth.admin.list_users()
                         user_id = next((u.id for u in auth_users if u.email == user_email), None)
