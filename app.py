@@ -138,7 +138,8 @@ html, body, [class*="css"] {
 .stTabs [data-baseweb="tab-panel"] { padding-top: 0; }
 
 /* ── Buttons ── */
-.stButton > button {
+.stButton > button,
+.stFormSubmitButton > button {
     background: #8C1515;
     color: white;
     border: none;
@@ -150,13 +151,16 @@ html, body, [class*="css"] {
     letter-spacing: 0.02em;
     transition: background 0.15s;
 }
-.stButton > button:hover { background: #6d1010; }
-.stButton > button[kind="secondary"] {
+.stButton > button:hover,
+.stFormSubmitButton > button:hover { background: #6d1010; }
+.stButton > button[kind="secondary"],
+.stFormSubmitButton > button[kind="secondaryFormSubmit"] {
     background: white;
     color: #8C1515;
     border: 1px solid #8C1515;
 }
-.stButton > button[kind="secondary"]:hover { background: #fdf5f5; }
+.stButton > button[kind="secondary"]:hover,
+.stFormSubmitButton > button[kind="secondaryFormSubmit"]:hover { background: #fdf5f5; }
 
 /* ── Download button ── */
 .stDownloadButton > button {
@@ -212,7 +216,19 @@ section[data-testid="stSidebar"] .stTextArea > div > div > textarea {
     border: 1px solid rgba(255,255,255,0.2) !important;
     color: white !important;
 }
+section[data-testid="stSidebar"] [data-testid="stTextInputRootElement"],
+section[data-testid="stSidebar"] [data-testid="stTextInputRootElement"] div,
+section[data-testid="stSidebar"] [data-testid="stTextAreaRootElement"],
+section[data-testid="stSidebar"] [data-testid="stTextAreaRootElement"] div {
+    background: transparent !important;
+}
 section[data-testid="stSidebar"] label { color: rgba(255,255,255,0.7) !important; }
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"],
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"] *,
+section[data-testid="stSidebar"] .stFormSubmitButton > button[kind="secondaryFormSubmit"],
+section[data-testid="stSidebar"] .stFormSubmitButton > button[kind="secondaryFormSubmit"] * {
+    color: #8C1515 !important;
+}
 
 /* ── Dataframe ── */
 .stDataFrame {
