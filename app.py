@@ -161,6 +161,10 @@ html, body, [class*="css"] {
 }
 .stButton > button[kind="secondary"]:hover,
 .stFormSubmitButton > button[kind="secondaryFormSubmit"]:hover { background: #fdf5f5; }
+.st-key-btn_forgot_password button {
+    font-size: 0.8rem !important;
+    padding: 0.35rem 1rem !important;
+}
 
 /* ── Download button ── */
 .stDownloadButton > button {
@@ -399,7 +403,7 @@ def _show_login():
             password = st.text_input("Password", type="password")
             if st.form_submit_button("Sign in", use_container_width=True):
                 _do_login(email, password)
-            if st.form_submit_button("Forgot password?", type="secondary", use_container_width=True):
+            if st.form_submit_button("Forgot password?", type="secondary", use_container_width=True, key="btn_forgot_password"):
                 st.session_state["show_forgot_password"] = True
                 st.rerun()
         st.markdown('<div class="login-footer">Restricted to authorized users · Stanford Law School</div>', unsafe_allow_html=True)
