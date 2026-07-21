@@ -501,48 +501,14 @@ if "results" not in st.session_state:
 TARGET_QUESTION = "What would you say to a classmate who was planning to take this class?"
 
 # ── PDF helpers ───────────────────────────────────────────────────────────────
-def extract_course_id(pdf_bytes, file_name):
+# These PDFs are pre-filtered to a single question and have no extractable text
+# layer (each page is a flattened image) — course_id must be read visually, so
+# it's extracted by the same GPT Vision call that reads comments off the header page.
+def get_page_count(pdf_bytes):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    text = ""
-    for i in range(min(8, len(doc))):
-        text += "\n" + doc[i].get_text()
+    count = len(doc)
     doc.close()
-    patterns = [r"\(([A-Z]\d{2}-LAW-[A-Za-z0-9]+(?:-\d+)+)\)", r"([A-Z]\d{2}-LAW-[A-Za-z0-9]+(?:-\d+)+)"]
-    for pattern in patterns:
-        match = re.search(pattern, text + "\n" + file_name)
-        if match:
-            return match.group(1)
-    return "COURSE_ID_NOT_FOUND"
-
-def get_page_texts(pdf_bytes):
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    texts = [page.get_text() for page in doc]
-    doc.close()
-    return texts
-
-def find_question_pages(pdf_bytes, target_question):
-    page_texts = get_page_texts(pdf_bytes)
-    start_idx = None
-    for i, text in enumerate(page_texts):
-        if target_question.lower() in text.lower():
-            start_idx = i
-            break
-    if start_idx is None:
-        return []
-    target_pages = [start_idx]
-    for j in range(start_idx + 1, len(page_texts)):
-        text = page_texts[j]
-        if re.search(r"General Comments", text, re.IGNORECASE):
-            target_pages.append(j)
-            break
-        if re.search(r"Did the instructor", text, re.IGNORECASE):
-            break
-        if re.search(r"Comments Report", text, re.IGNORECASE) and j > start_idx:
-            break
-        target_pages.append(j)
-        if len(target_pages) >= 25:
-            break
-    return target_pages
+    return count
 
 def page_to_base64_image(pdf_bytes, page_index, zoom=2.5):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -553,32 +519,32 @@ def page_to_base64_image(pdf_bytes, page_index, zoom=2.5):
     doc.close()
     return base64.b64encode(img_bytes).decode("utf-8")
 
-def extract_comments_from_page(client, pdf_bytes, page_index, course_id, file_name, target_question):
+def extract_comments_from_page(client, pdf_bytes, page_index, file_name, target_question):
     image_b64 = page_to_base64_image(pdf_bytes, page_index)
     prompt = f"""
 You are digitizing handwritten law school course evaluation comments.
 
-Target question:
+This page is from a course evaluation report already filtered down to one question:
 "{target_question}"
 
-Extract every handwritten student comment visible on this page that belongs to the target question.
+Extract every handwritten student comment visible on this page.
 
 Rules:
 - One student comment = one JSON object.
-- Preserve duplicates.
-- Do not summarize.
-- Do not combine separate comments.
-- Do not extract comments belonging to other questions.
-- If the page includes the target question heading, extract only comments below that heading.
-- If the page is a continuation page, extract all visible comments that appear to belong to the same target question section.
-- If the next question heading, such as "General Comments", appears on the page, extract only comments ABOVE that next question heading and ignore everything below it.
+- A single comment may span multiple lines or sentences. Only start a new comment object when there's a clear visual break — blank vertical space, or a new line starting back at the same left margin as other separate comments — indicating a different student's response. Do not split one continuous note into separate objects just because it wraps onto a new line.
+- Preserve duplicates — do not merge or deduplicate comments.
+- Do not summarize or paraphrase.
+- Do not combine separate comments into one.
+- Ignore printed text (course name, professor, enrollment stats, the question heading) when extracting comments — only transcribe handwritten comments.
 - If a word is unclear, write [illegible].
 - If the whole comment is hard to read, include the best transcription and set needs_review to "yes".
-- If there are no target-question comments on the page, return an empty comments list.
+- If there are no handwritten comments on this page, return an empty comments list.
+- If this page shows the report header, find the course identifier printed in parentheses after "Course Questions General", e.g. "(W26-LAW-3001-01-1)", and return it without parentheses as "course_id". Otherwise return an empty string for "course_id".
 - Return valid JSON only.
 
 Return exactly this JSON structure:
 {{
+  "course_id": "course id here or empty string",
   "comments": [
     {{
       "comment": "transcribed comment here",
@@ -599,14 +565,15 @@ Return exactly this JSON structure:
     try:
         data = json.loads(content)
     except json.JSONDecodeError:
-        return [{"course_id": course_id, "comment": content, "needs_review": "yes", "file_name": file_name, "page_number": page_index + 1}]
+        return "", [{"comment": content, "needs_review": "yes", "file_name": file_name, "page_number": page_index + 1}]
+    course_id = str(data.get("course_id", "")).strip()
     rows = []
     for item in data.get("comments", []):
         comment = item.get("comment", "").strip()
         needs_review = item.get("needs_review", "no").strip().lower()
         if comment:
-            rows.append({"course_id": course_id, "comment": comment, "needs_review": "yes" if needs_review == "yes" else "no", "file_name": file_name, "page_number": page_index + 1})
-    return rows
+            rows.append({"comment": comment, "needs_review": "yes" if needs_review == "yes" else "no", "file_name": file_name, "page_number": page_index + 1})
+    return course_id, rows
 
 def normalize_comment_for_duplicate_check(comment):
     text = str(comment).lower().strip()
@@ -624,14 +591,16 @@ def mark_duplicates(df):
     return df.drop(columns=["duplicate_key"])
 
 def process_pdf(pdf_bytes, file_name, client, target_question):
-    course_id = extract_course_id(pdf_bytes, file_name)
-    question_pages = find_question_pages(pdf_bytes, target_question)
-    if not question_pages:
-        return [{"course_id": course_id, "comment": "Question Not Given", "needs_review": "yes", "file_name": file_name, "page_number": ""}]
     all_rows = []
-    for page_index in question_pages:
-        rows = extract_comments_from_page(client, pdf_bytes, page_index, course_id, file_name, target_question)
+    course_id = None
+    for page_index in range(get_page_count(pdf_bytes)):
+        page_course_id, rows = extract_comments_from_page(client, pdf_bytes, page_index, file_name, target_question)
+        if page_course_id and not course_id:
+            course_id = page_course_id
         all_rows.extend(rows)
+    course_id = course_id or "COURSE_ID_NOT_FOUND"
+    for row in all_rows:
+        row["course_id"] = course_id
     return all_rows
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -818,7 +787,7 @@ with tab_results:
             column_config={
                 "course_id": st.column_config.TextColumn("Course ID", width="small"),
                 "comment": st.column_config.TextColumn("Comment", width="large"),
-                "needs_review": st.column_config.TextColumn("Status", width="small"),
+                "needs_review": st.column_config.TextColumn("Needs_Review", width="small"),
                 "is_duplicate": st.column_config.TextColumn("Duplicate", width="small"),
                 "page_number": st.column_config.TextColumn("Page", width="small"),
             },
@@ -828,8 +797,8 @@ with tab_results:
         st.markdown("")
         c1, c2, _ = st.columns([1, 1, 5])
         with c1:
-            csv = filtered.to_csv(index=False, encoding="utf-8-sig")
-            st.download_button("⬇  Download CSV", data=csv, file_name="eval_comments.csv", mime="text/csv")
+            csv = df.to_csv(index=False, encoding="utf-8-sig")
+            st.download_button("⬇  Download CSV", data=csv, file_name="eval_comments.csv", mime="text/csv", help="Downloads all extracted comments, regardless of the filters above.")
         with c2:
             if st.button("🗑  Clear All", type="secondary"):
                 st.session_state.results = pd.DataFrame()
