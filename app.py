@@ -769,7 +769,7 @@ with tab_results:
 
         filtered = df.copy()
         if search:
-            filtered = filtered[filtered["comment"].str.contains(search, case=False, na=False)]
+            filtered = filtered[filtered["comment"].str.contains(search, case=False, na=False, regex=False)]
         if filter_course != "All courses":
             filtered = filtered[filtered["course_id"] == filter_course]
         if filter_review == "Needs review":
